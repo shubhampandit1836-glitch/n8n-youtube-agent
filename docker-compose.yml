@@ -1,0 +1,68 @@
+﻿services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=saas_user
+      - POSTGRES_PASSWORD=saas_password
+      - POSTGRES_DB=saas_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h localhost -U saas_user -d saas_db']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=saas_db
+      - DB_POSTGRESDB_USER=saas_user
+      - DB_POSTGRESDB_PASSWORD=saas_password
+      - N8N_RESTRICT_FILE_ACCESS_TO=/data;/data/media
+      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - TZ=Asia/Kolkata
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./media:/data/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  render-worker:
+    build: ./render-worker
+    restart: always
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    environment:
+      - TZ=Asia/Kolkata
+      - PEXELS_API_KEY=tsHsMddXi9yWyL3JzUkqklKXnOtA0iVoelYVu5888Ws56WHd9sHkd04X
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./media:/data/media
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  n8n_data:
