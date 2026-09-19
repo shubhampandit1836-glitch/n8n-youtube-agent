@@ -1,6 +1,7 @@
 ﻿import asyncio
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,15 +63,38 @@ async def search_photos(client, query, orientation, per_page=8):
     return data["photos"]
 
 # ---------- candidate extraction ----------
-def video_candidate(item: dict):
+def video_candidate(item: dict, orientation: str):
     files = [
         f for f in item.get("video_files", [])
-        if f.get("file_type") == "video/mp4" and (f.get("width") or 0) >= MIN_VIDEO_WIDTH
+        if f.get("file_type") == "video/mp4"
     ]
     if not files:
         return None
-    files.sort(key=lambda f: f["width"])  # smallest HD variant = fastest download
-    best = files[0]
+
+    if orientation == "portrait":
+        portrait = [f for f in files if (f.get("height") or 0) > (f.get("width") or 0)]
+        if not portrait:
+            return None
+        full_hd = [f for f in portrait if (f.get("height") or 0) >= 1920]
+        if full_hd:
+            pool = sorted(full_hd, key=lambda f: (f.get("width") or 0) * (f.get("height") or 0))
+            best = pool[0]
+        else:
+            pool = sorted(portrait, key=lambda f: (f.get("width") or 0) * (f.get("height") or 0))
+            best = pool[-1]
+        return {
+            "kind": "video",
+            "sourceId": item.get("id"),
+            "url": best["link"],
+            "clipDurationSec": item.get("duration"),
+        }
+
+    # landscape (original 16:9 behavior)
+    hd = [f for f in files if (f.get("width") or 0) >= MIN_VIDEO_WIDTH]
+    if not hd:
+        return None
+    hd.sort(key=lambda f: f["width"])
+    best = hd[0]
     return {
         "kind": "video",
         "sourceId": item.get("id"),
@@ -86,17 +110,17 @@ def photo_candidate(item: dict, orientation: str):
             return {"kind": "photo", "sourceId": item.get("id"), "url": src[key]}
     return None
 
-def rank_video_candidates(items, need_sec, used_ids):
+def rank_video_candidates(items, need_sec, used_ids, orientation):
     cands = []
     for v in items:
         if v.get("id") in used_ids:
             continue
-        c = video_candidate(v)
+        c = video_candidate(v, orientation)
         if c:
             cands.append(c)
     covering = [c for c in cands if (c["clipDurationSec"] or 0) >= need_sec]
-    covering.sort(key=lambda c: c["clipDurationSec"] or 0)  # shortest clip that covers
-    rest = sorted(cands, key=lambda c: -(c["clipDurationSec"] or 0))  # else longest
+    covering.sort(key=lambda c: c["clipDurationSec"] or 0)
+    rest = sorted(cands, key=lambda c: -(c["clipDurationSec"] or 0))
     return covering + rest
 
 # ---------- download with validation + retries ----------
@@ -183,8 +207,11 @@ async def build_visuals(req: VisualsRequest):
                     # --- video pass
                     try:
                         await asyncio.sleep(0.4)
-                        found = await search_videos(client, query, req.orientation)
-                        ranked = rank_video_candidates(found, seg.durationSec, used_ids)
+                        # Strip catalog numbers like "HD 189733b" and anchor the query to space visuals
+                        clean_q = re.sub(r"\b(hd\s*\d+[a-z]?|kepler[-\s]*\d+[a-z]?)\b", "exoplanet", query, flags=re.IGNORECASE)
+                        anchored_query = f"{clean_q} space cinematic" if "space" not in clean_q.lower() else clean_q
+                        found = await search_videos(client, anchored_query, req.orientation)
+                        ranked = rank_video_candidates(found, seg.durationSec, used_ids, req.orientation)
                     except PexelsFatalError:
                         raise
                     except Exception as e:
