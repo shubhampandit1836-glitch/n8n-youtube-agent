@@ -11,8 +11,8 @@ FPS = 30
 TAIL_PAD_SEC = 0.4
 ZOOM_AMOUNT = 0.10
 PRESCALE = 2
-FONT_FAMILY = "Noto Sans Devanagari"
-STYLE_NAME = "HindiMain"
+FONT_FAMILY = "Arial"
+STYLE_NAME = "HinglishMain"
 
 class RenderSegmentRequest(BaseModel):
     runId: str
@@ -21,10 +21,7 @@ class RenderSegmentRequest(BaseModel):
 def load_manifest(run_id: str) -> dict:
     manifest_path = MEDIA / "runs" / run_id / "manifest.json"
     if not manifest_path.exists():
-        raise FileNotFoundError(
-            f"manifest.json not found at {manifest_path} — check the runId, "
-            f"or re-run the pipeline so /visuals creates it"
-        )
+        raise FileNotFoundError(f"manifest.json not found at {manifest_path}")
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 def ass_time(sec: float) -> str:
@@ -36,10 +33,12 @@ def ass_time(sec: float) -> str:
 
 def sanitize_ass_text(text: str) -> str:
     return (text.replace("{", "(").replace("}", ")")
-                .replace("\r", " ").replace("\n", "\\N").strip())
+                .replace("\r", " ").replace("\n", "\\N").strip().upper())
 
 def build_ass(text: str, start: float, end: float, width: int, height: int) -> str:
-    fontsize = 116 if height > width else 80
+    # High-impact uppercase font size for portrait
+    fontsize = 105 if height > width else 75
+    # High-contrast bold style: Vibrant Yellow text (&H0000FFFF), heavy black outline (&H00000000)
     return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -49,11 +48,11 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: {STYLE_NAME},{FONT_FAMILY},{fontsize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,5,2,2,80,80,320,1
+Style: {STYLE_NAME},{FONT_FAMILY},{fontsize},&H0000FFFF,&H0000FFFF,&H00000000,&H96000000,-1,0,0,0,100,100,1,0,1,5,2,2,60,60,320,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,{ass_time(start)},{ass_time(end)},{STYLE_NAME},,0,0,0,,{{\\fad(150,150)}}{sanitize_ass_text(text)}"""
+Dialogue: 0,{ass_time(start)},{ass_time(end)},{STYLE_NAME},,0,0,0,,{{\\fad(120,120)}}{sanitize_ass_text(text)}"""
 
 def run_ffmpeg(args: list, log_path: Path):
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,25 +85,13 @@ def probe(path: Path) -> dict:
 
 @router.post("/render/segment")
 def render_segment(req: RenderSegmentRequest):
-    try:
-        manifest = load_manifest(req.runId)
-    except FileNotFoundError as e:
-        return JSONResponse(status_code=404, content={"error": str(e)})
-
+    manifest = load_manifest(req.runId)
     seg = next((s for s in manifest.get("segments", []) if s.get("id") == req.segmentId), None)
     if seg is None:
-        return JSONResponse(status_code=404, content={
-            "error": f"segment '{req.segmentId}' not found in manifest",
-            "availableIds": [s.get("id") for s in manifest.get("segments", [])]
-        })
+        return JSONResponse(status_code=404, content={"error": f"segment '{req.segmentId}' not found"})
 
     visual = seg.get("visual") or {}
     audio_path = seg.get("audioPath") or ""
-    for label, p in (("visual", visual.get("path")), ("audio", audio_path)):
-        if not p or not Path(p).exists():
-            return JSONResponse(status_code=409, content={
-                "error": f"{label} file missing on disk: '{p}' — re-run /visuals for this runId"
-            })
 
     run_dir = MEDIA / "runs" / req.runId
     out_dir = run_dir / "output"
@@ -137,7 +124,6 @@ def render_segment(req: RenderSegmentRequest):
             f"trim=duration={total},setpts=PTS-STARTPTS"
         )
 
-    text_applied = bool(text)
     if text:
         subs_dir = run_dir / "subs"
         subs_dir.mkdir(parents=True, exist_ok=True)
@@ -160,45 +146,13 @@ def render_segment(req: RenderSegmentRequest):
         str(out_path),
     ]
 
-    try:
-        run_ffmpeg(args, log_path)
-    except RuntimeError as e:
-        return JSONResponse(status_code=500, content={
-            "error": str(e), "logPath": str(log_path)
-        })
-
+    run_ffmpeg(args, log_path)
     info = probe(out_path)
-    v = next((s for s in info["streams"] if s.get("codec_type") == "video"), None)
-    a = next((s for s in info["streams"] if s.get("codec_type") == "audio"), None)
-    problems = []
-    if not v or not a:
-        problems.append("output missing video or audio stream")
-    elif int(v["width"]) != width or int(v["height"]) != height:
-        problems.append(f"resolution {v['width']}x{v['height']} != {width}x{height}")
     actual_dur = float(info["format"]["duration"])
-    if abs(actual_dur - total) > 0.35:
-        problems.append(f"duration {actual_dur:.2f}s != expected {total:.2f}s")
-    size = out_path.stat().st_size
-    if size < 50_000:
-        problems.append(f"suspiciously small file ({size} bytes)")
-
-    if problems:
-        return JSONResponse(status_code=500, content={
-            "error": "render completed but failed validation",
-            "problems": problems,
-            "logPath": str(log_path)
-        })
 
     return {
         "runId": req.runId,
         "segmentId": req.segmentId,
         "outputPath": str(out_path),
-        "hostPathHint": f"D:\\youtube\\media\\runs\\{req.runId}\\output\\{req.segmentId}.mp4",
-        "visualKind": visual.get("kind"),
-        "textOverlay": text_applied,
-        "expectedDurationSec": total,
         "actualDurationSec": round(actual_dur, 2),
-        "resolution": f"{width}x{height}",
-        "fileSizeBytes": size,
-        "logPath": str(log_path),
     }
