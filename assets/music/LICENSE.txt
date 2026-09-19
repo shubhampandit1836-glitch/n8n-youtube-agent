@@ -1,0 +1,20 @@
+﻿Filename:    music_01.mp3
+Title:       Space Ambient
+Artist:      leberch
+Source:      https://pixabay.com/music/ambient-space-ambient-509783/
+Downloaded:  19-09-2026
+License:     Pixabay License (free for commercial use, no attribution required)
+
+Filename:    music_02.mp3
+Title:       Ambient Cinematic
+Artist:      AtlasAudio
+Source:      https://pixabay.com/music/ambient-ambient-cinematic-510518/
+Downloaded:  19-09-2026
+License:     Pixabay License (free for commercial use, no attribution required)
+
+Filename:    music_03.mp3
+Title:       Documentary Ambient
+Artist:      Kulakovka
+Source:      https://pixabay.com/music/beats-documentary-ambient-274888/
+Downloaded:  19-09-2026
+License:     Pixabay License (free for commercial use, no attribution required)

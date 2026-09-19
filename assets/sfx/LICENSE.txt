@@ -1,0 +1,3 @@
+﻿All .wav files in this folder were synthesized programmatically with FFmpeg
+by this project (Step 8 build script). No third-party audio — no external
+license applies. Generated: 19-09-2026

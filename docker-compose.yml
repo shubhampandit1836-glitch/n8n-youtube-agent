@@ -56,6 +56,7 @@
       - "8000:8000"
     volumes:
       - ./media:/data/media
+      - ./assets:/data/assets
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
       interval: 30s
