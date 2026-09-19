@@ -7,10 +7,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.visuals import router as visuals_router
 from app.render import router as render_router
+from app.assemble import router as assemble_router
 
 app = FastAPI(title="Media Worker")
 app.include_router(visuals_router)
 app.include_router(render_router)
+app.include_router(assemble_router)
 
 MEDIA = Path("/data/media")
 
