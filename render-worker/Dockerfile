@@ -1,17 +1,14 @@
-FROM python:3.12-slim
+﻿FROM python:3.12-slim
 
-# FFmpeg for rendering, curl for the container healthcheck
+# FFmpeg (rendering), curl (healthcheck),
+# fontconfig + fonts-noto-core (Devanagari text overlays via libass)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl \
+    && apt-get install -y --no-install-recommends ffmpeg curl fontconfig fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY app ./app
-
 EXPOSE 8000
-
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
