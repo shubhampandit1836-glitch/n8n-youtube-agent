@@ -10,3 +10,4 @@ __pycache__/
 # git branch -M main
 # git remote add origin git@github.com:shubhampandit1836-glitch/n8n-youtube-agent.git
 # git push -u origin main
+backups/
